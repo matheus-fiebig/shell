@@ -104,7 +104,7 @@ int main(int argc, char** argv) {
         numeroDeComandos--;
         commandIndex = getNextCommand(commands,commandIndex);
         if(isOperand(copyArgv[commandIndex]) == 1){
-            printf("é operador \n");
+            printf("é operador \n") ;
             executeOperand(copyArgv[commandIndex], commands, commandIndex);
             continue;
         }
