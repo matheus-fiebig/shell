@@ -8,10 +8,7 @@
 
 int returnValue = 0;
 int isBackground = 0;
-<<<<<<< HEAD
-=======
 
->>>>>>> 3b453e57a6f86f93ea2e5e4b0c4ee58dc8595c67
 int isOperand(char* argv) {
 	if(strcmp(argv, "&&") == 0 || strcmp(argv, "||") == 0 || strcmp(argv, "|") == 0){
 		return 1;
