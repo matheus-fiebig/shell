@@ -49,11 +49,7 @@ int runInBackground(char** commands, int actualCommandIndex, int argc){
     int i = actualCommandIndex;
     while (commands[i] != NULL && i < argc - 1){
         if(strcmp(commands[i], "&") == 0)
-<<<<<<< HEAD
             return 1;
-=======
-            return 1; 
->>>>>>> 3b453e57a6f86f93ea2e5e4b0c4ee58dc8595c67
         i++;
     }
     return 0;
@@ -68,10 +64,6 @@ void execute(char** commands, int startIndex){
     }
 }
 
-<<<<<<< HEAD
-
-=======
->>>>>>> 3b453e57a6f86f93ea2e5e4b0c4ee58dc8595c67
 /*Implementar se possivel seu operador aqui*/
 void executeOperand(char* op, char** commands, int nextCommandIndex){
     if(strcmp(op, "&&") == 0 && returnValue == 0){
@@ -83,18 +75,7 @@ void executeOperand(char* op, char** commands, int nextCommandIndex){
     }
 
     if(strcmp(op, "&") == 0){
-<<<<<<< HEAD
         execute(commands, nextCommandIndex);
-=======
-        execute(commands,nextCommandIndex);
-    }
-}
-
-void print(int argc, char** argv){
-    printf("argc %d \n",argc);
-    for(int i = 0; i < argc;i++){
-        printf("%s %d \n", argv[i],i);
->>>>>>> 3b453e57a6f86f93ea2e5e4b0c4ee58dc8595c67
     }
 }
 
@@ -108,22 +89,12 @@ int main(int argc, char** argv) {
             commands[i] = NULL;
             numeroDeComandos++;
         }
-<<<<<<< HEAD
         if(strcmp("&",commands[i]) == 0){
             commands[i] = NULL;
         }
     }
     commands[argc - 1] = NULL;
 
-=======
-        if(strcmp("&",commands[i])==0){
-            commands[i] = NULL;
-        }
-    }
-    commands[argc-1] = NULL;
-    print(argc,commands);
-    
->>>>>>> 3b453e57a6f86f93ea2e5e4b0c4ee58dc8595c67
     int commandIndex = -1; 
     while(numeroDeComandos > 0){
         isBackground = 0;
