@@ -1,122 +1,160 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <malloc.h>
+#include <math.h>
 #include <unistd.h>
 #include <sys/wait.h>
-#include <strings.h>
-#include <string.h>
-#include <stdlib.h>
+#include <pthread.h>
 
-//Conta o numero de pipes
-int cont_pipes(char **); 
-//Encotra a posicao dos pipes subsituindo-os por NULL. entao armazena o ponteiro para o primeiro argumento em um vetor.
-void  le_comandos(char ***, char **); 
+int returnValue = 0;
+int pipes = 0;
+int pipeIterator = 0;
+int* fds = NULL;
 
+int isOperand(char* argv, char* token) {
+    if(token != NULL){
+        return strcmp(argv, token) == 0;
+    }
 
-int main (int argc, char **argv){
-    pid_t p;
-    int num = cont_pipes(argv), i = 0, cont = 0;
-    int fds[2*num];
-    char **cmds[num+1]; //Vvetor de comandos. Deve possuir o numero de pipes + 1 para armazenar todos os comandos
+	return strcmp(argv, "&&") == 0 || strcmp(argv, "||") == 0 || strcmp(argv, "|") == 0;
+}
 
-    le_comandos(cmds, argv);
+char** createCopy(int argc, char** argv) {
+    char** newArray = (char**)malloc(sizeof(char*) * argc);
+    for (int i = 0; i < argc; i++) {
+        newArray[i] = (char*)malloc(sizeof(char) * strlen(argv[i]));
+    }
 
-    //Abrindo todos os pipes
-    for(i = 0; i < num; i++){
+    for (int i = 0; i < argc; i++) {
+        strcpy(newArray[i], argv[i]);
+    }
+
+    return newArray;
+}
+
+int getNextCommand(char** commands, int actualCommandIndex){
+    if(actualCommandIndex == -1)
+        return 0;
+
+    int numberOfParameters = 1;
+    int i = actualCommandIndex;
+    while (commands[i] != NULL){
+        numberOfParameters++;
+        i++;
+    }
+    return numberOfParameters + actualCommandIndex;
+}
+
+int isBackground(char** commands, int actualCommandIndex, int argc){
+    int i = actualCommandIndex;
+    while (commands[i] != NULL && i < argc - 1){
+        if(strcmp(commands[i], "&") == 0)
+            return 1;
+        i++;
+    }
+    return 0;
+}
+
+int countPipes(char** argv, int argc){
+    int cont = 0, i = 0;
+    while(argv[i] != NULL && i < argc - 1){
+        if(isOperand(argv[i], "|")) cont++;
+        i++;
+    }
+    return cont;
+}
+
+void openPipes(int numberOfPipes){
+    for(int i = 0; i < numberOfPipes; i++){
         if(pipe(fds + i*2) == -1){
             perror("Erro de pipe");
             exit(EXIT_FAILURE);
         } 
     }
+}
 
-    i = 0;
-
-    //Enquanto i < que o numero de comandos.
-    while(i < num+1){
-
-        p = fork();
-        if(p == 0){ //Filhos serao responsaveis por executar os comandos e liga-los.
-           
-            if(num != 0){
-                //Se necessario abre duplica o descritor de entrada
-                if(i != 0){
-                    if(dup2(fds[2*i - 2], STDIN_FILENO) == -1){
-                        perror("Erro de dup entrada");
-                        exit(EXIT_FAILURE);
-                    }
-                }
-                //Se necessario abre duplica o descritor de saida
-                if(i*2 != 2*num)
-                    if(dup2(fds[2*i + 1], STDOUT_FILENO) == -1){
-                        perror("Erro de dup saida");
-                        exit(EXIT_FAILURE);
-                    }
-            }
-
-            int j;
-            //Fecha os pipes
-            for(j = 0; j < 2*num-1; j++){
-                if(close(fds[j]) == -1){
-                    perror("Erro de close");
-                    exit(EXIT_FAILURE);
-                }
-            }
-
-            //Executa o comando armazenado
-            if(execvp(*cmds[i], cmds[i]) == -1){
-                perror("Erro de exec");
-                exit(EXIT_FAILURE);
-            }    
-        } 
-        i++;
-    }
-
-    
-    int j;
-
-    //Fecha os todos os pipes
-    for(j = 0; j < 2*num; j++){
+void closePipes(int numberOfPipes, int fds[], int factor){
+    for(int j = 0; j < 2*numberOfPipes-factor; j++){
         if(close(fds[j]) == -1){
-            perror("Erro de closeB");
+            perror("Erro de close");
             exit(EXIT_FAILURE);
         }
     }
+}
 
-    //Espera que todos os filhos teminem a execucao
-    for(j = 0; j < num; j++) waitpid(0, NULL, 0);
+void configurePipe(char* op, pid_t p){
+    if(pipes != 0){
+        if(pipeIterator != 0){
+            printf("Error: %d", pipeIterator);
+            if(dup2(fds[2*pipeIterator - 2], STDIN_FILENO) == -1){
+                perror("Erro de dup entrada");
+                exit(EXIT_FAILURE);
+            }
+        }
 
+        if(pipeIterator*2 != 2*pipes){
+            if(dup2(fds[2*pipeIterator + 1], STDOUT_FILENO) == -1){
+                perror("Erro de dup saida");
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+
+    closePipes(pipes,fds,1);
+}
+
+int countNumberOfCommands(char** commands, int argc){
+    int numeroDeComandos = 1;
+    for(int i = 0; i < argc-1; i++){
+        if(isOperand(commands[i],NULL) == 1 || isOperand(commands[i],"&") == 1){
+            if(isOperand(commands[i],"&") == 0) numeroDeComandos++;
+            commands[i] = NULL;
+        }
+    }
+    commands[argc - 1] = NULL;
+    return numeroDeComandos;
+}
+
+void execute(char** commands, int startIndex, char* operation){
+    pid_t p = fork();
+    if(p == 0){
+        configurePipe(operation,p);
+        execvp(commands[startIndex], &commands[startIndex]);
+    }
+    
+    pipeIterator++;
+}
+
+void executeOperand(char* op, char** commands, int nextCommandIndex){
+    if(strcmp(op, "&") == 0 || strcmp(op, "|") == 0){
+        execute(commands, nextCommandIndex, op);
+    }
+}
+
+int main(int argc, char** argv) {
+    char** copyArgv = createCopy(argc,argv);
+	char** commands = &argv[1];
+    
+    int numeroDeComandos = countNumberOfCommands(commands, argc);
+    int commandIndex = -1; 
+
+    pipes = countPipes(copyArgv, argc);
+    fds = (int*)malloc(sizeof(int)*pipes*2);
+    openPipes(pipes);
+
+    while(numeroDeComandos-- > 0){
+        commandIndex = getNextCommand(commands,commandIndex);
+        if(isOperand(copyArgv[commandIndex],NULL)){
+            executeOperand(copyArgv[commandIndex], commands, commandIndex);
+            continue;
+        }
+        execute(commands,commandIndex, "");
+    }
+
+    closePipes(pipes,fds,0);
+    for(int j = 0; j < pipes; j++) waitpid(0,NULL,0);
+	
     return 0;
-
 }
 
-int cont_pipes(char **argv){
-
-    int cont = 0, i = 0;
-
-    //Compara o argumento em busca de um operador pipe para adicionar a contagem
-    while(argv[i]){
-        if(!strcmp(argv[i], "|")) cont++;
-        i++;
-    }
-
-    //Retorna o numero de pipes encotrado
-    return cont;
-}
-
-void le_comandos(char ***cmds, char **argv){
-
-    int i = 0, j = 1;
-
-    //Armazena o primeiro comando no vetor
-    cmds[0] = &argv[1];
-
-    while(argv[i]){
-        //Quando encontrar um pipe o subistitui por NULL e armazena o proximo argumento no vetor.
-        //A substituicao eh feita para que seja possivel utilizar o vetor na primitiva execvp
-        if(!strcmp(argv[i], "|")){
-            argv[i] = NULL;
-            cmds[j] = &argv[i+1];
-            j++;
-        } 
-        
-        i++;
-    }
-}
