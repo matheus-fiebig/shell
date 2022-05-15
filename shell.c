@@ -12,7 +12,8 @@ int isBackground = 0;
 int isOperand(char* argv) {
 	if(strcmp(argv, "&&") == 0 || strcmp(argv, "||") == 0 || strcmp(argv, "|") == 0){
 		return 1;
-	
+    }
+    	
 	return 0;
 }
 
