@@ -7,14 +7,13 @@
 #include <pthread.h>
 
 int returnValue = 0;
-int isBackground = 0;
 
-int isOperand(char* argv) {
-	if(strcmp(argv, "&&") == 0 || strcmp(argv, "||") == 0 || strcmp(argv, "|") == 0){
-		return 1;
+int isOperand(char* argv, char* token) {
+    if(token != NULL){
+        return strcmp(argv, token) == 0;
     }
-    	
-	return 0;
+
+	return strcmp(argv, "&&") == 0 || strcmp(argv, "||") == 0 || strcmp(argv, "|") == 0;
 }
 
 char** createCopy(int argc, char** argv) {
@@ -43,7 +42,7 @@ int getNextCommand(char** commands, int actualCommandIndex){
     return numberOfParameters + actualCommandIndex;
 }
 
-int runInBackground(char** commands, int actualCommandIndex, int argc){
+int isBackground(char** commands, int actualCommandIndex, int argc){
     int i = actualCommandIndex;
     while (commands[i] != NULL && i < argc - 1){
         if(strcmp(commands[i], "&") == 0)
@@ -53,63 +52,65 @@ int runInBackground(char** commands, int actualCommandIndex, int argc){
     return 0;
 }
 
-void execute(char** commands, int startIndex){
+int countNumberOfCommands(char** commands, int argc){
+    int numeroDeComandos = 1;
+    for(int i = 0; i < argc-1; i++){
+        if(isOperand(commands[i],NULL) == 1 || isOperand(commands[i],"&") == 1){
+            if(isOperand(commands[i],"&") == 0) numeroDeComandos++;
+            commands[i] = NULL;
+        }
+    }
+    commands[argc - 1] = NULL;
+    return numeroDeComandos;
+}
+
+void execute(char** commands, int startIndex, char* operation){
     pid_t p = fork();
     if(p == 0){
         execvp(commands[startIndex], &commands[startIndex]);
-    }else if(p > 0 && isBackground == 0){
+    }else if(p > 0 && isOperand(operation, "&") == 0){
         wait(&returnValue);
     }
 }
 
-/*Implementar se possivel seu operador aqui*/
 void executeOperand(char* op, char** commands, int nextCommandIndex){
     if(strcmp(op, "&&") == 0 && returnValue == 0){
-        execute(commands, nextCommandIndex);
+        execute(commands, nextCommandIndex, op);
     }
 
     if(strcmp(op, "||") == 0 && returnValue != 0){
-        execute(commands, nextCommandIndex);
+        execute(commands, nextCommandIndex, op);
     }
 
     if(strcmp(op, "&") == 0){
-        execute(commands, nextCommandIndex);
+        execute(commands, nextCommandIndex, op);
+    }
+
+    if(strcmp(op, "|") == 0){
+        execute(commands, nextCommandIndex, op);
     }
 }
 
 int main(int argc, char** argv) {
     char** copyArgv = createCopy(argc,argv);
 	char** commands = &argv[1];
-
-    int numeroDeComandos = 1;
-    for(int i = 0; i < argc-1; i++){
-        if(isOperand(commands[i]) == 1){
-            commands[i] = NULL;
-            numeroDeComandos++;
-        }
-        if(strcmp("&",commands[i]) == 0){
-            commands[i] = NULL;
-        }
-    }
-    commands[argc - 1] = NULL;
-
+    
+    int numeroDeComandos = countNumberOfCommands(commands, argc);
     int commandIndex = -1; 
-    while(numeroDeComandos > 0){
-        isBackground = 0;
-        numeroDeComandos--;
+    
+    while(numeroDeComandos-- > 0){
         commandIndex = getNextCommand(commands,commandIndex);
-        if(isOperand(copyArgv[commandIndex]) == 1){
+        if(isOperand(copyArgv[commandIndex],NULL)){
             executeOperand(copyArgv[commandIndex], commands, commandIndex);
             continue;
         }
         
-        if(runInBackground(copyArgv, commandIndex, argc) == 1){
-            isBackground = 1;
+        if(isBackground(copyArgv, commandIndex, argc)){            
             executeOperand("&", commands, commandIndex);
             continue;
         }
         
-        execute(commands,commandIndex);
+        execute(commands,commandIndex, "");
     }
 
 	return 0;
