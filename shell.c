@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <malloc.h>
 #include <math.h>
@@ -7,6 +8,12 @@
 #include <pthread.h>
 
 int returnValue = 0;
+int pipes = 0;
+int pipeIterator = 0;
+int* fds = NULL;
+char** commands = NULL;
+char** copyArgv = NULL;
+pid_t* lateAwait = NULL;
 
 int isOperand(char* argv, char* token) {
     if(token != NULL){
@@ -29,7 +36,7 @@ char** createCopy(int argc, char** argv) {
     return newArray;
 }
 
-int getNextCommand(char** commands, int actualCommandIndex){
+int getNextCommand(int actualCommandIndex){
     if(actualCommandIndex == -1)
         return 0;
 
@@ -42,21 +49,22 @@ int getNextCommand(char** commands, int actualCommandIndex){
     return numberOfParameters + actualCommandIndex;
 }
 
-int isBackground(char** commands, int actualCommandIndex, int argc){
+int isBackground(int actualCommandIndex, int argc){
     int i = actualCommandIndex;
-    while (commands[i] != NULL && i < argc - 1){
-        if(strcmp(commands[i], "&") == 0)
+    while (copyArgv[i] != NULL && i < argc - 1){
+        if(strcmp(copyArgv[i], "&") == 0)
             return 1;
         i++;
     }
     return 0;
 }
 
-int countNumberOfCommands(char** commands, int argc){
+int countNumberOfCommands(int argc){
     int numeroDeComandos = 1;
     for(int i = 0; i < argc-1; i++){
         if(isOperand(commands[i],NULL) == 1 || isOperand(commands[i],"&") == 1){
-            if(isOperand(commands[i],"&") == 0) numeroDeComandos++;
+            if(!isOperand(commands[i],"&")) numeroDeComandos++;
+            if(isOperand(commands[i], "|")) pipes++;
             commands[i] = NULL;
         }
     }
@@ -64,55 +72,103 @@ int countNumberOfCommands(char** commands, int argc){
     return numeroDeComandos;
 }
 
-void execute(char** commands, int startIndex, char* operation){
-    pid_t p = fork();
-    if(p == 0){
-        execvp(commands[startIndex], &commands[startIndex]);
-    }else if(p > 0 && isOperand(operation, "&") == 0){
-        wait(&returnValue);
+void openPipes(int numberOfPipes){
+    for(int i = 0; i < numberOfPipes; i++){
+        if(pipe(fds + i*2) == -1){
+            perror("Erro de pipe");
+            exit(EXIT_FAILURE);
+        } 
     }
 }
 
-void executeOperand(char* op, char** commands, int nextCommandIndex){
-    if(strcmp(op, "&&") == 0 && returnValue == 0){
-        execute(commands, nextCommandIndex, op);
+void closePipes(int numberOfPipes, int factor){
+    for(int j = 0; j < 2*numberOfPipes-factor; j++){
+        if(close(fds[j]) == -1){
+            perror("Erro de close");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+void configurePipes(char* op){
+    /* if(!isOperand(op,"|")){
+        return;
+    } */
+    
+    if(pipes != 0){
+        if(pipeIterator != 0){
+            if(dup2(fds[2*pipeIterator - 2], STDIN_FILENO) == -1){
+                perror("Erro de dup entrada");
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        if(pipeIterator*2 != 2*pipes){
+            if(dup2(fds[2*pipeIterator + 1], STDOUT_FILENO) == -1){
+                perror("Erro de dup saida");
+                exit(EXIT_FAILURE);
+            }
+        }
     }
 
-    if(strcmp(op, "||") == 0 && returnValue != 0){
-        execute(commands, nextCommandIndex, op);
+    closePipes(pipes,1);
+}
+
+void execute(int startIndex, char* operator){
+    pid_t p = fork();
+    if(p == 0){
+        configurePipes(operator);
+        execvp(commands[startIndex], &commands[startIndex]);
+    }
+    
+    if(!isOperand(operator,"&")) waitpid(0,&returnValue,0);
+}
+
+void executeOperand(char* op, int nextCommandIndex){
+    if(isOperand(op,"&&") && returnValue == 0){
+        execute(nextCommandIndex, op);
     }
 
-    if(strcmp(op, "&") == 0){
-        execute(commands, nextCommandIndex, op);
+    if(isOperand(op,"||") && returnValue != 0){
+        execute(nextCommandIndex, op);
     }
 
-    if(strcmp(op, "|") == 0){
-        execute(commands, nextCommandIndex, op);
+    if(isOperand(op,"&")){
+        execute(nextCommandIndex, op);
+    }
+
+    if(isOperand(op,"|")){
+        pipeIterator++;
+        execute(nextCommandIndex, op);
     }
 }
 
 int main(int argc, char** argv) {
-    char** copyArgv = createCopy(argc,argv);
-	char** commands = &argv[1];
+    copyArgv = createCopy(argc,argv);
+	commands = &argv[1];
     
-    int numeroDeComandos = countNumberOfCommands(commands, argc);
+    int numeroDeComandos = countNumberOfCommands(argc);
+    fds = (int*)malloc(sizeof(int)*pipes*2);
+    openPipes(pipes);
+    
     int commandIndex = -1; 
-    
     while(numeroDeComandos-- > 0){
-        commandIndex = getNextCommand(commands,commandIndex);
+        commandIndex = getNextCommand(commandIndex);
         if(isOperand(copyArgv[commandIndex],NULL)){
-            executeOperand(copyArgv[commandIndex], commands, commandIndex);
+            executeOperand(copyArgv[commandIndex], commandIndex);
             continue;
         }
         
-        if(isBackground(copyArgv, commandIndex, argc)){            
-            executeOperand("&", commands, commandIndex);
+        if(isBackground(commandIndex, argc)){            
+            executeOperand("&", commandIndex);
             continue;
         }
         
-        execute(commands,commandIndex, "");
+        execute(commandIndex, "NULL");
     }
 
+    closePipes(pipes,0);
+    for(int j = 0; j < pipes; j++) waitpid(0,NULL,0);
 	return 0;
 }
 
